@@ -8,10 +8,25 @@ Gerador de status report simples para homologações.
 | Aba | Para quê |
 |---|---|
 | **Projeto** | Nome, release, ambiente, período, escopo e responsável. Backup/importação dos dados em JSON. |
-| **Plano de teste** | Suba o plano em `.xlsx`, `.xls`, `.csv` ou `.json`. As colunas de ID, cenário, módulo, responsável e status são identificadas automaticamente (dá para ajustar o mapeamento). O status de cada cenário pode ser atualizado na própria tabela. |
+| **Plano de teste** | Duas opções: baixar o **caderno padrão** (.xlsx), preencher e subir, ou **importar o caderno de testes da própria pessoa**, configurando os campos. O status de cada cenário pode ser atualizado na própria tabela. |
 | **Bugs** | Cadastro de bugs com severidade, status, módulo, responsável, cenário relacionado e link (Jira/Azure etc.). |
 | **Status do dia** | Comentários por data: resumo, destaques, riscos, impedimentos e próximos passos. |
-| **Report** | Monta o report da data escolhida: status geral (verde/amarelo/vermelho), indicadores, execução por módulo, comentários do dia, bugs em aberto e cenários com falha/bloqueados. Exporta como texto (Teams/Slack), e-mail (HTML), arquivo HTML ou PDF. |
+| **Report** | Monta o report da data escolhida com seções, indicadores e gráficos **configuráveis**. Exporta como texto (Teams/Slack), e-mail (HTML), arquivo HTML ou PDF. |
+
+### Importar o próprio caderno de testes
+Ao subir uma planilha em formato próprio, abre a **Configuração da importação**:
+- **Aba** e **linha do cabeçalho**: detectadas automaticamente (funciona com capa/título acima da tabela).
+- **Campos do report**: qual coluna corresponde a ID, Cenário, Módulo, Responsável, Prioridade, Data de execução, Bug relacionado e Status.
+- **Campos extras**: outras colunas (Ciclo, Sistema, Tipo de teste…) que passam a aparecer na tabela, na busca e nos gráficos.
+- **Valores de status**: cada valor encontrado (ex.: `OK`, `NOK`, `Aguardando massa`) é ligado a um status do report.
+- **Salvar como modelo**: na próxima vez que uma planilha com as mesmas colunas for importada, a configuração é aplicada sozinha. Modelos podem ser exportados/importados em `.json` para compartilhar com o time.
+
+### Gráficos configuráveis
+No painel **Configurar report** dá para ligar/desligar seções e indicadores e montar os gráficos:
+- **Tipo:** barras horizontais, colunas, rosca ou tabela.
+- **Dados:** cenários de teste ou bugs.
+- **Agrupar por / dividir por:** status, módulo, responsável, prioridade, data, severidade, aberto/fechado ou qualquer campo extra importado.
+- Opções de 100%, limite de itens (agrupa o resto em "Outros"), reordenar, duplicar e restaurar o padrão.
 
 ### Status reconhecidos no plano
 `Passou / Passed / OK / Aprovado`, `Falhou / Failed / Reprovado`, `Bloqueado / Blocked / Impedido`,

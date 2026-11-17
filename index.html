@@ -23,7 +23,7 @@
       <button role="tab" data-tab="plano">Plano de teste</button>
       <button role="tab" data-tab="bugs">Bugs <span class="badge" id="bugCount">0</span></button>
       <button role="tab" data-tab="diario">Status do dia</button>
-      <button role="tab" data-tab="report" class="primary-tab">Report</button>
+      <button role="tab" data-tab="report">Report</button>
     </nav>
   </header>
 
@@ -53,7 +53,7 @@
 
       <div class="card subtle">
         <h2>Backup dos dados</h2>
-        <p class="hint">Os dados ficam no navegador. Exporte um backup para trocar de máquina ou compartilhar com outra pessoa do time.</p>
+        <p class="hint">Os dados ficam no navegador. O backup leva tudo: projeto, plano, bugs, comentários, modelos de importação e configuração do report.</p>
         <div class="row-actions">
           <button class="btn" id="exportJson">Exportar backup (.json)</button>
           <label class="btn file-btn">Importar backup<input type="file" id="importJson" accept=".json,application/json" hidden></label>
@@ -66,29 +66,88 @@
     <!-- PLANO -->
     <section class="panel" id="tab-plano">
       <h1>Plano de teste</h1>
-      <p class="hint">Suba o plano em <b>.xlsx</b>, <b>.xls</b>, <b>.csv</b> ou <b>.json</b>. O sistema identifica as colunas de ID, cenário, módulo, responsável e status e calcula os indicadores do report.</p>
+      <p class="hint">Use o nosso caderno padrão ou importe o caderno de testes do seu próprio jeito: você diz qual coluna é o quê e o modelo fica salvo para as próximas importações.</p>
 
-      <label class="dropzone" id="dropzone">
-        <input type="file" id="planFile" accept=".xlsx,.xls,.csv,.json,.tsv,.txt" hidden>
-        <strong>Arraste o plano de teste aqui</strong>
-        <span>ou clique para escolher o arquivo</span>
-        <small id="planFileName"></small>
-      </label>
-
-      <div class="card" id="mappingCard" hidden>
-        <h2>Colunas identificadas</h2>
-        <p class="hint">Confira o mapeamento. Se algo estiver errado, ajuste e clique em aplicar.</p>
-        <div class="mapping" id="mappingFields"></div>
-        <div class="row-actions">
-          <label id="sheetPickerWrap" hidden>Aba <select id="sheetPicker"></select></label>
-          <button class="btn primary" id="applyMapping">Aplicar mapeamento</button>
+      <div class="two-col">
+        <div class="card option-card">
+          <span class="step">Opção 1</span>
+          <h2>Caderno de testes padrão</h2>
+          <p class="hint">Baixe o modelo, preencha e suba no campo ao lado. As colunas são reconhecidas automaticamente.</p>
+          <ul class="mini-list">
+            <li>ID, Cenário, Pré-condição, Passos, Resultado esperado</li>
+            <li>Módulo, Prioridade, Responsável</li>
+            <li>Status, Data de execução, Bug relacionado, Observações</li>
+          </ul>
+          <button class="btn primary" id="downloadTemplate">Baixar caderno padrão (.xlsx)</button>
         </div>
+        <div class="card option-card">
+          <span class="step">Opção 2</span>
+          <h2>Importar planilha</h2>
+          <label class="dropzone" id="dropzone">
+            <input type="file" id="planFile" accept=".xlsx,.xls,.xlsm,.csv,.json,.tsv,.txt" hidden>
+            <strong>Arraste o caderno de testes aqui</strong>
+            <span>.xlsx, .xls, .csv ou .json — padrão ou modelo próprio</span>
+            <small id="planFileName"></small>
+          </label>
+        </div>
+      </div>
+
+      <div class="card" id="importCard" hidden>
+        <div class="card-head">
+          <div>
+            <h2>Configuração da importação</h2>
+            <p class="hint" id="importInfo"></p>
+          </div>
+          <button class="btn ghost small" id="closeImport">Fechar</button>
+        </div>
+
+        <div class="import-grid">
+          <label>Modelo
+            <select id="impModel"></select>
+          </label>
+          <label>Aba da planilha
+            <select id="impSheet"></select>
+          </label>
+          <label>Linha do cabeçalho
+            <input type="number" id="impHeaderRow" min="1" step="1">
+          </label>
+        </div>
+
+        <h3 class="sub">Pré-visualização</h3>
+        <div class="table-wrap preview"><table class="data" id="impPreview"></table></div>
+
+        <h3 class="sub">1. Campos do report <small>— qual coluna da sua planilha corresponde a cada campo</small></h3>
+        <div class="mapping" id="impMapping"></div>
+
+        <h3 class="sub">2. Campos extras <small>— colunas adicionais para usar em filtros e gráficos (ex.: Ciclo, Sistema, Tipo de teste)</small></h3>
+        <div class="checks" id="impExtras"></div>
+
+        <h3 class="sub">3. Valores de status <small>— como cada valor da sua planilha deve ser contado</small></h3>
+        <div id="impStatus"></div>
+
+        <div class="import-actions">
+          <button class="btn primary" id="impApply">Importar plano</button>
+          <span class="sep"></span>
+          <input id="impModelName" placeholder="Nome do modelo (ex.: Caderno Squad Pagamentos)">
+          <button class="btn" id="impSaveModel">Salvar como modelo e importar</button>
+        </div>
+      </div>
+
+      <div class="card subtle" id="modelsCard">
+        <div class="card-head">
+          <div>
+            <h2>Meus modelos de importação</h2>
+            <p class="hint">Quando uma planilha com as mesmas colunas for importada, o modelo é aplicado automaticamente. Exporte um modelo para compartilhar com o time.</p>
+          </div>
+          <label class="btn file-btn small">Importar modelo<input type="file" id="importModel" accept=".json" hidden></label>
+        </div>
+        <div id="modelList"></div>
       </div>
 
       <div class="kpis" id="planKpis"></div>
 
       <div class="toolbar">
-        <input type="search" id="testSearch" placeholder="Buscar cenário, ID ou módulo">
+        <input type="search" id="testSearch" placeholder="Buscar cenário, ID, módulo ou campo extra">
         <select id="testFilter">
           <option value="">Todos os status</option>
         </select>
@@ -96,7 +155,7 @@
       </div>
       <div class="table-wrap">
         <table class="data" id="testTable">
-          <thead><tr><th>ID</th><th>Cenário</th><th>Módulo</th><th>Responsável</th><th>Status</th><th></th></tr></thead>
+          <thead></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -175,13 +234,34 @@
       <div class="report-toolbar">
         <label>Data do report <input type="date" id="reportDate"></label>
         <div class="row-actions">
+          <button class="btn" id="toggleConfig" aria-expanded="true">Configurar report</button>
           <button class="btn" id="copyText">Copiar texto (Teams/Slack)</button>
           <button class="btn" id="copyHtml">Copiar para e-mail</button>
           <button class="btn" id="downloadHtml">Baixar HTML</button>
           <button class="btn primary" id="printReport">Imprimir / PDF</button>
         </div>
       </div>
-      <article id="report" class="report"></article>
+      <div class="report-layout" id="reportLayout">
+        <aside class="config" id="reportConfig">
+          <details open>
+            <summary>Seções</summary>
+            <div class="checks col" id="cfgSections"></div>
+          </details>
+          <details open>
+            <summary>Indicadores</summary>
+            <div class="checks col" id="cfgKpis"></div>
+          </details>
+          <details open>
+            <summary>Gráficos</summary>
+            <div id="cfgCharts"></div>
+            <div class="row-actions">
+              <button class="btn small" id="addChart">+ Adicionar gráfico</button>
+              <button class="btn small ghost" id="resetCharts">Restaurar padrão</button>
+            </div>
+          </details>
+        </aside>
+        <article id="report" class="report"></article>
+      </div>
     </section>
   </main>
 
