@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Status Report de Homologação</title>
+  <meta name="description" content="Gerador de status report para homologações: plano de teste, bugs e comentários do dia em um report pronto para enviar.">
+  <link rel="stylesheet" href="styles.css">
+  <script src="vendor/xlsx.full.min.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">SR</span>
+      <div>
+        <strong id="brandProject">Status Report</strong>
+        <small id="brandSub">Homologação</small>
+      </div>
+    </div>
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-tab="projeto" class="active">Projeto</button>
+      <button role="tab" data-tab="plano">Plano de teste</button>
+      <button role="tab" data-tab="bugs">Bugs <span class="badge" id="bugCount">0</span></button>
+      <button role="tab" data-tab="diario">Status do dia</button>
+      <button role="tab" data-tab="report" class="primary-tab">Report</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- PROJETO -->
+    <section class="panel active" id="tab-projeto">
+      <h1>Dados do projeto</h1>
+      <p class="hint">Essas informações aparecem no cabeçalho do report. Tudo fica salvo neste navegador.</p>
+      <form id="projectForm" class="grid-form">
+        <label>Projeto<input name="name" placeholder="Ex.: Portal de Cotação"></label>
+        <label>Release / Sprint<input name="release" placeholder="Ex.: R2.4 — Sprint 18"></label>
+        <label>Ambiente<input name="environment" placeholder="Ex.: HML"></label>
+        <label>Responsável QA<input name="owner" placeholder="Seu nome"></label>
+        <label>Início da homologação<input type="date" name="startDate"></label>
+        <label>Fim previsto<input type="date" name="endDate"></label>
+        <label class="full">Objetivo / escopo<textarea name="scope" rows="3" placeholder="O que está sendo homologado nesta rodada"></textarea></label>
+        <label>Status geral
+          <select name="statusOverride">
+            <option value="">Automático (calculado)</option>
+            <option value="green">Verde — no prazo</option>
+            <option value="yellow">Amarelo — atenção</option>
+            <option value="red">Vermelho — crítico</option>
+          </select>
+        </label>
+        <label>Destinatários / áreas<input name="audience" placeholder="Ex.: PO, Dev, Negócio"></label>
+      </form>
+
+      <div class="card subtle">
+        <h2>Backup dos dados</h2>
+        <p class="hint">Os dados ficam no navegador. Exporte um backup para trocar de máquina ou compartilhar com outra pessoa do time.</p>
+        <div class="row-actions">
+          <button class="btn" id="exportJson">Exportar backup (.json)</button>
+          <label class="btn file-btn">Importar backup<input type="file" id="importJson" accept=".json,application/json" hidden></label>
+          <button class="btn ghost" id="loadDemo">Carregar exemplo</button>
+          <button class="btn danger" id="resetAll">Limpar tudo</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- PLANO -->
+    <section class="panel" id="tab-plano">
+      <h1>Plano de teste</h1>
+      <p class="hint">Suba o plano em <b>.xlsx</b>, <b>.xls</b>, <b>.csv</b> ou <b>.json</b>. O sistema identifica as colunas de ID, cenário, módulo, responsável e status e calcula os indicadores do report.</p>
+
+      <label class="dropzone" id="dropzone">
+        <input type="file" id="planFile" accept=".xlsx,.xls,.csv,.json,.tsv,.txt" hidden>
+        <strong>Arraste o plano de teste aqui</strong>
+        <span>ou clique para escolher o arquivo</span>
+        <small id="planFileName"></small>
+      </label>
+
+      <div class="card" id="mappingCard" hidden>
+        <h2>Colunas identificadas</h2>
+        <p class="hint">Confira o mapeamento. Se algo estiver errado, ajuste e clique em aplicar.</p>
+        <div class="mapping" id="mappingFields"></div>
+        <div class="row-actions">
+          <label id="sheetPickerWrap" hidden>Aba <select id="sheetPicker"></select></label>
+          <button class="btn primary" id="applyMapping">Aplicar mapeamento</button>
+        </div>
+      </div>
+
+      <div class="kpis" id="planKpis"></div>
+
+      <div class="toolbar">
+        <input type="search" id="testSearch" placeholder="Buscar cenário, ID ou módulo">
+        <select id="testFilter">
+          <option value="">Todos os status</option>
+        </select>
+        <button class="btn" id="addTest">+ Cenário manual</button>
+      </div>
+      <div class="table-wrap">
+        <table class="data" id="testTable">
+          <thead><tr><th>ID</th><th>Cenário</th><th>Módulo</th><th>Responsável</th><th>Status</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="empty" id="testEmpty">Nenhum plano carregado ainda.</p>
+    </section>
+
+    <!-- BUGS -->
+    <section class="panel" id="tab-bugs">
+      <h1>Bugs</h1>
+      <form id="bugForm" class="grid-form card">
+        <input type="hidden" name="uid">
+        <label>ID / Chave<input name="key" placeholder="Ex.: JIRA-123"></label>
+        <label class="span2">Título<input name="title" required placeholder="Descrição curta do defeito"></label>
+        <label>Severidade
+          <select name="severity">
+            <option>Crítica</option><option>Alta</option><option selected>Média</option><option>Baixa</option>
+          </select>
+        </label>
+        <label>Status
+          <select name="status">
+            <option>Aberto</option><option>Em correção</option><option>Aguardando reteste</option><option>Corrigido</option><option>Fechado</option><option>Rejeitado</option>
+          </select>
+        </label>
+        <label>Módulo<input name="module" list="moduleList" placeholder="Ex.: Cotação"></label>
+        <label>Responsável<input name="owner" placeholder="Dev / squad"></label>
+        <label>Cenário relacionado<input name="testId" list="testIdList" placeholder="ID do cenário"></label>
+        <label>Link<input name="link" type="url" placeholder="https://..."></label>
+        <label class="full">Observação<textarea name="notes" rows="2" placeholder="Impacto, contorno, evidência"></textarea></label>
+        <div class="full row-actions">
+          <button class="btn primary" type="submit" id="bugSubmit">Cadastrar bug</button>
+          <button class="btn ghost" type="button" id="bugCancel" hidden>Cancelar edição</button>
+        </div>
+      </form>
+      <datalist id="moduleList"></datalist>
+      <datalist id="testIdList"></datalist>
+
+      <div class="toolbar">
+        <input type="search" id="bugSearch" placeholder="Buscar bug">
+        <select id="bugFilter">
+          <option value="open">Somente em aberto</option>
+          <option value="">Todos</option>
+        </select>
+      </div>
+      <div class="table-wrap">
+        <table class="data" id="bugTable">
+          <thead><tr><th>ID</th><th>Título</th><th>Severidade</th><th>Status</th><th>Módulo</th><th>Responsável</th><th>Aberto em</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="empty" id="bugEmpty">Nenhum bug cadastrado.</p>
+    </section>
+
+    <!-- DIARIO -->
+    <section class="panel" id="tab-diario">
+      <h1>Status do dia</h1>
+      <form id="noteForm" class="grid-form card">
+        <label>Data<input type="date" name="date" required></label>
+        <label>Tipo
+          <select name="type">
+            <option value="resumo">Resumo do dia</option>
+            <option value="destaque">Destaque / avanço</option>
+            <option value="risco">Risco</option>
+            <option value="impedimento">Impedimento</option>
+            <option value="proximos">Próximos passos</option>
+          </select>
+        </label>
+        <label class="full">Comentário<textarea name="text" rows="3" required placeholder="O que aconteceu hoje na homologação?"></textarea></label>
+        <div class="full row-actions"><button class="btn primary" type="submit">Adicionar comentário</button></div>
+      </form>
+      <div id="noteList" class="notes"></div>
+      <p class="empty" id="noteEmpty">Nenhum comentário registrado.</p>
+    </section>
+
+    <!-- REPORT -->
+    <section class="panel" id="tab-report">
+      <div class="report-toolbar">
+        <label>Data do report <input type="date" id="reportDate"></label>
+        <div class="row-actions">
+          <button class="btn" id="copyText">Copiar texto (Teams/Slack)</button>
+          <button class="btn" id="copyHtml">Copiar para e-mail</button>
+          <button class="btn" id="downloadHtml">Baixar HTML</button>
+          <button class="btn primary" id="printReport">Imprimir / PDF</button>
+        </div>
+      </div>
+      <article id="report" class="report"></article>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
