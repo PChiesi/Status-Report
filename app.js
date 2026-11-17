@@ -43,6 +43,7 @@
     { key: 'module', label: 'Módulo / funcionalidade', patterns: [/modulo/, /funcionalidade/, /feature/, /^area/, /componente/, /suite/, /epico/, /epic/, /jornada/, /^fluxo/, /^sistema/] },
     { key: 'owner', label: 'Responsável', patterns: [/responsavel/, /executor/, /testador/, /tester/, /owner/, /analista/, /assignee/, /executado por/] },
     { key: 'priority', label: 'Prioridade', patterns: [/prioridade/, /priority/, /criticidade/] },
+    { key: 'plannedDate', label: 'Data planejada', patterns: [/data planejad/, /planejad/, /data previst/, /previsao/, /planned/, /due date/, /prazo/] },
     { key: 'executedAt', label: 'Data de execução', patterns: [/data (de |da )?execu/, /executado em/, /dt\.? exec/, /execution date/, /^data$/] },
     { key: 'bugRef', label: 'Bug relacionado', patterns: [/bug/, /defeito/, /^issue/, /jira/, /incidente/] },
     { key: 'status', label: 'Status / resultado', required: true, patterns: [/^status/, /situacao/, /resultado obtido/, /^resultado$/, /^result$/, /resultado(?! esperado)/, /^execucao$/, /^state/] },
@@ -50,11 +51,11 @@
   const FIELD_BY_KEY = Object.fromEntries(FIELDS.map(f => [f.key, f]));
 
   // Caderno padrão disponibilizado pela ferramenta
-  const STANDARD_HEADERS = ['ID', 'Cenário', 'Pré-condição', 'Passos', 'Resultado esperado', 'Módulo', 'Prioridade', 'Responsável', 'Status', 'Data de execução', 'Bug relacionado', 'Observações'];
+  const STANDARD_HEADERS = ['ID', 'Cenário', 'Pré-condição', 'Passos', 'Resultado esperado', 'Módulo', 'Prioridade', 'Responsável', 'Data planejada', 'Status', 'Data de execução', 'Bug relacionado', 'Observações'];
   const STANDARD_MODEL = {
     id: 'padrao', name: 'Caderno padrão', builtin: true, sheet: 'Casos de teste',
-    mapping: { id: 'ID', title: 'Cenário', module: 'Módulo', owner: 'Responsável', priority: 'Prioridade', executedAt: 'Data de execução', bugRef: 'Bug relacionado', status: 'Status' },
-    extras: [], statusMap: {},
+    mapping: { id: 'ID', title: 'Cenário', module: 'Módulo', owner: 'Responsável', priority: 'Prioridade', plannedDate: 'Data planejada', executedAt: 'Data de execução', bugRef: 'Bug relacionado', status: 'Status' },
+    optional: ['plannedDate'], extras: [], statusMap: {},
   };
 
   // ---------- Report: indicadores, seções e gráficos ----------
@@ -86,14 +87,17 @@
     { key: 'column', label: 'Colunas' },
     { key: 'donut', label: 'Rosca' },
     { key: 'table', label: 'Tabela' },
+    { key: 'daily', label: 'Execução diária (planejado x realizado)' },
   ];
   const defaultCharts = () => [
     { id: uid(), title: 'Execução geral', type: 'donut', source: 'tests', groupBy: 'status', splitBy: '', percent: false, limit: 0 },
     { id: uid(), title: 'Execução por módulo', type: 'bar', source: 'tests', groupBy: 'module', splitBy: 'status', percent: true, limit: 0 },
+    { id: uid(), title: 'Execução diária — planejado x realizado', type: 'daily', source: 'tests', groupBy: 'status', splitBy: '', mode: 'daily', plan: 'auto', skipWeekends: true, showTable: false, limit: 0 },
     { id: uid(), title: 'Bugs por severidade', type: 'column', source: 'bugs', groupBy: 'severity', splitBy: 'state', percent: false, limit: 0 },
     { id: uid(), title: 'Resumo por módulo', type: 'table', source: 'tests', groupBy: 'module', splitBy: 'status', percent: false, limit: 0 },
   ];
   const defaultReport = () => ({
+    v: 2,
     sections: Object.fromEntries(SECTION_DEFS.map(s => [s.key, true])),
     kpis: ['total', 'execPct', 'passPct', 'blocked', 'bugsOpen', 'bugsClosed'],
     charts: defaultCharts(),
@@ -119,6 +123,10 @@
     s.report = Object.assign(defaultReport(), (data && data.report) || {});
     s.report.sections = Object.assign(defaultReport().sections, s.report.sections || {});
     if (!Array.isArray(s.report.charts)) s.report.charts = defaultCharts();
+    if (!s.report.v || s.report.v < 2) {
+      s.report.charts.splice(Math.min(1, s.report.charts.length), 0, defaultCharts().find(c => c.type === 'daily'));
+      s.report.v = 2;
+    }
     if (!Array.isArray(s.models)) s.models = [];
     if (!Array.isArray(s.extraFields)) s.extraFields = [];
     s.tests.forEach(t => { t.extra = t.extra || {}; });
@@ -229,8 +237,14 @@
     if (tm.total && tm.executed && tm.passPct < 90 && tm.passPct >= 70) bump('yellow', `Taxa de sucesso de ${fmtPct(tm.passPct)}`);
     if (tm.counts.blocked && tm.blockedPct < 15) bump('yellow', `${tm.counts.blocked} cenário(s) bloqueado(s)`);
     if (state.notes.some(n => n.type === 'impedimento' && n.date === reportDate())) bump('yellow', 'Impedimento registrado no dia');
+    const plan = dailySeries({ plan: 'auto', skipWeekends: true });
     const { startDate, endDate } = state.project;
-    if (startDate && endDate && tm.total) {
+    if (plan.hasPlan && plan.plannedToDate && tm.total) {
+      const gap = plan.plannedToDate - plan.realizedToDate;
+      if (endDate && new Date(reportDate()) > new Date(endDate) && tm.execPct < 100) bump('red', 'Prazo da homologação vencido com execução incompleta');
+      else if (gap > 0 && plan.realizedToDate < plan.plannedToDate * 0.6) bump('red', `Execução atrasada: ${plan.realizedToDate} de ${plan.plannedToDate} cenários planejados até a data`);
+      else if (gap > 0 && plan.realizedToDate < plan.plannedToDate * 0.85) bump('yellow', `Execução abaixo do planejado: ${plan.realizedToDate} de ${plan.plannedToDate} até a data`);
+    } else if (startDate && endDate && tm.total) {
       const s = new Date(startDate), e = new Date(endDate), r = new Date(reportDate());
       const span = (e - s) / 864e5 + 1;
       if (span > 0) {
@@ -279,7 +293,11 @@
     const wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
     const out = {};
     wb.SheetNames.forEach(n => {
-      out[n] = XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, defval: '', raw: false, dateNF: 'yyyy-mm-dd', blankrows: true });
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, defval: '', raw: true, blankrows: true });
+      out[n] = rows.map(r => r.map(c => {
+        if (c instanceof Date) { const d = new Date(c.getTime() + 60000); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
+        return c == null ? '' : String(c);
+      }));
     });
     return out;
   }
@@ -357,7 +375,7 @@
   function findModel(sheets) {
     const models = [...state.models, STANDARD_MODEL];
     for (const model of models) {
-      const needed = Object.values(model.mapping).filter(Boolean).map(norm);
+      const needed = Object.entries(model.mapping).filter(([k, v]) => v && !(model.optional || []).includes(k)).map(([, v]) => norm(v));
       if (!needed.length) continue;
       const sheetNames = Object.keys(sheets).sort((a, b) => (b === model.sheet) - (a === model.sheet));
       for (const sheet of sheetNames) {
@@ -426,8 +444,14 @@
       toast(`${state.tests.length} cenários importados (${found.model.name}).`);
     } else {
       useModel(null, imp.sheet, null);
-      imp.info = 'Planilha em formato próprio. Confira as colunas identificadas, ajuste o que for preciso e clique em importar. Salve como modelo para não configurar de novo.';
-      toast('Confira a configuração da importação.');
+      if (imp.mapping.title && imp.mapping.status) {
+        applyImport();
+        imp.info = `Planilha em formato próprio: colunas identificadas automaticamente e ${state.tests.length} cenários importados. Confira abaixo, ajuste se precisar e salve como modelo para não configurar de novo.`;
+        toast(`${state.tests.length} cenários importados. Confira a configuração.`);
+      } else {
+        imp.info = 'Planilha em formato próprio. Indique as colunas, ajuste o que for preciso e clique em importar. Salve como modelo para não configurar de novo.';
+        toast('Confira a configuração da importação.');
+      }
     }
     renderImport();
     $('#importCard').hidden = false;
@@ -519,6 +543,7 @@
         module: get(r, 'module'),
         owner: get(r, 'owner'),
         priority: get(r, 'priority'),
+        plannedDate: toIsoDate(get(r, 'plannedDate')),
         executedAt: toIsoDate(get(r, 'executedAt')),
         bugRef: get(r, 'bugRef'),
         status: m.status ? mapStatus(get(r, 'status')) : 'pending',
@@ -565,13 +590,13 @@
     if (!window.XLSX) { toast('Leitor de Excel ainda carregando, tente novamente.'); return; }
     const wb = XLSX.utils.book_new();
     const ex = [
-      ['CT-001', 'Login com usuário válido', 'Usuário ativo cadastrado', '1. Acessar a tela de login\n2. Informar usuário e senha\n3. Clicar em Entrar', 'Usuário acessa a página inicial', 'Acesso', 'Alta', 'Ana', 'Passou', '2026-11-17', '', ''],
-      ['CT-002', 'Login com senha inválida', 'Usuário ativo cadastrado', '1. Informar senha incorreta\n2. Clicar em Entrar', 'Mensagem "Usuário ou senha inválidos"', 'Acesso', 'Média', 'Ana', 'Falhou', '2026-11-17', 'BUG-001', 'Mensagem genérica exibida'],
-      ['CT-003', 'Cotação com 2 coberturas', 'Produto Auto ativo', '1. Iniciar cotação\n2. Selecionar 2 coberturas\n3. Calcular', 'Prêmio calculado conforme tabela', 'Cotação', 'Alta', 'Bruno', 'Não executado', '', '', ''],
+      ['CT-001', 'Login com usuário válido', 'Usuário ativo cadastrado', '1. Acessar a tela de login\n2. Informar usuário e senha\n3. Clicar em Entrar', 'Usuário acessa a página inicial', 'Acesso', 'Alta', 'Ana', '2026-11-16', 'Passou', '2026-11-16', '', ''],
+      ['CT-002', 'Login com senha inválida', 'Usuário ativo cadastrado', '1. Informar senha incorreta\n2. Clicar em Entrar', 'Mensagem "Usuário ou senha inválidos"', 'Acesso', 'Média', 'Ana', '2026-11-16', 'Falhou', '2026-11-17', 'BUG-001', 'Mensagem genérica exibida'],
+      ['CT-003', 'Cotação com 2 coberturas', 'Produto Auto ativo', '1. Iniciar cotação\n2. Selecionar 2 coberturas\n3. Calcular', 'Prêmio calculado conforme tabela', 'Cotação', 'Alta', 'Bruno', '2026-11-18', 'Não executado', '', '', ''],
     ];
     const ws = XLSX.utils.aoa_to_sheet([STANDARD_HEADERS, ...ex]);
-    ws['!cols'] = [10, 36, 26, 40, 34, 16, 11, 16, 15, 16, 15, 30].map(w => ({ wch: w }));
-    ws['!autofilter'] = { ref: `A1:L${ex.length + 1}` };
+    ws['!cols'] = [10, 36, 26, 40, 34, 16, 11, 16, 15, 15, 16, 15, 30].map(w => ({ wch: w }));
+    ws['!autofilter'] = { ref: `A1:M${ex.length + 1}` };
     XLSX.utils.book_append_sheet(wb, ws, 'Casos de teste');
 
     const help = [
@@ -579,8 +604,9 @@
       [''],
       ['Como usar'],
       ['1. Preencha uma linha por cenário na aba "Casos de teste". Não renomeie as colunas.'],
-      ['2. Atualize a coluna Status durante a execução.'],
-      ['3. Suba o arquivo na aba "Plano de teste" do Status Report. As colunas são reconhecidas automaticamente.'],
+      ['2. Preencha a Data planejada de cada cenário para acompanhar planejado x realizado por dia.'],
+      ['3. Durante a execução, atualize Status e Data de execução (formato AAAA-MM-DD ou DD/MM/AAAA).'],
+      ['4. Suba o arquivo na aba "Plano de teste" do Status Report. As colunas são reconhecidas automaticamente.'],
       [''],
       ['Valores aceitos em Status'],
       ...TEST_STATUSES.map(s => [s.label]),
@@ -611,7 +637,8 @@
 
     const extras = state.extraFields;
     const hasPriority = state.tests.some(t => t.priority);
-    $('#testTable thead').innerHTML = `<tr><th>ID</th><th>Cenário</th><th>Módulo</th>${hasPriority ? '<th>Prioridade</th>' : ''}<th>Responsável</th>${extras.map(h => `<th>${esc(h)}</th>`).join('')}<th>Status</th><th></th></tr>`;
+    const hasPlanned = state.tests.some(t => t.plannedDate);
+    $('#testTable thead').innerHTML = `<tr><th>ID</th><th>Cenário</th><th>Módulo</th>${hasPriority ? '<th>Prioridade</th>' : ''}<th>Responsável</th>${extras.map(h => `<th>${esc(h)}</th>`).join('')}${hasPlanned ? '<th>Planejado</th>' : ''}<th>Executado em</th><th>Status</th><th></th></tr>`;
 
     const q = norm($('#testSearch').value);
     const f = $('#testFilter').value;
@@ -625,6 +652,8 @@
         ${hasPriority ? `<td>${esc(t.priority)}</td>` : ''}
         <td>${esc(t.owner)}</td>
         ${extras.map(h => `<td>${esc((t.extra || {})[h])}</td>`).join('')}
+        ${hasPlanned ? `<td>${esc(fmtDate(t.plannedDate))}</td>` : ''}
+        <td><input type="date" class="test-exec" value="${esc(isIso(t.executedAt) ? t.executedAt : '')}" aria-label="Data de execução"></td>
         <td><select class="test-status">${TEST_STATUSES.map(s => `<option value="${s.key}" ${s.key === t.status ? 'selected' : ''}>${s.label}</option>`).join('')}</select></td>
         <td class="actions"><button class="btn small ghost" data-act="bug" title="Abrir bug para este cenário">+ Bug</button> <button class="btn small ghost" data-act="del" title="Remover">✕</button></td>
       </tr>`).join('');
@@ -710,6 +739,7 @@
       { key: 'owner', label: 'Responsável', get: t => t.owner || 'Sem responsável' },
       { key: 'priority', label: 'Prioridade', get: t => t.priority || 'Sem prioridade', sortKey: v => { const i = PRIORITY_ORDER.indexOf(norm(v)); return i < 0 ? 99 : i; } },
       { key: 'executedAt', label: 'Data de execução', get: t => fmtDate(t.executedAt) || 'Sem data', sortKey: v => v.split('/').reverse().join('') },
+      { key: 'plannedDate', label: 'Data planejada', get: t => fmtDate(t.plannedDate) || 'Sem data', sortKey: v => v.split('/').reverse().join('') },
       ...state.extraFields.map(h => ({ key: `x:${h}`, label: `${h} (extra)`, get: t => ((t.extra || {})[h]) || 'Não informado' })),
     ];
   }
@@ -767,6 +797,7 @@
   }
 
   function renderChart(cfg) {
+    if (cfg.type === 'daily') return renderDaily(cfg);
     const d = chartData(cfg);
     const title = `<h3 style="${FONT}font-size:14px;margin:18px 0 8px;color:#1d2330;">${esc(cfg.title || 'Gráfico')}</h3>`;
     if (!d.groups.length) return title + `<p style="${FONT}font-size:13px;color:#8a93a3;">Sem dados para este gráfico.</p>`;
@@ -843,6 +874,154 @@
       (split ? legendHtml(d.splits.map(s => ({ label: s.label, color: s.color, value: d.groups.reduce((n, g) => n + (g.parts[s.key] || 0), 0) }))) : '');
   }
 
+  // ---------- Execução diária: planejado x realizado ----------
+  const isIso = (v) => /^\d{4}-\d{2}-\d{2}$/.test(v || '');
+  function addDays(iso, n) { const d = new Date(`${iso}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
+  const isWeekend = (iso) => { const g = new Date(`${iso}T12:00:00Z`).getUTCDay(); return g === 0 || g === 6; };
+  const shortDate = (iso) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+
+  function dailySeries(cfg) {
+    const rDate = reportDate();
+    const valid = state.tests.filter(t => t.status !== 'na');
+    const realized = {};
+    let undated = 0;
+    valid.filter(t => t.status === 'passed' || t.status === 'failed').forEach(t => {
+      if (!isIso(t.executedAt)) undated++;
+      else if (t.executedAt <= rDate) realized[t.executedAt] = (realized[t.executedAt] || 0) + 1;
+    });
+    const { startDate, endDate } = state.project;
+    const hasColumn = valid.some(t => isIso(t.plannedDate));
+    const hasPeriod = isIso(startDate) && isIso(endDate) && startDate <= endDate;
+    let planMode = cfg.plan || 'auto';
+    if (planMode === 'auto') planMode = hasColumn ? 'column' : hasPeriod ? 'linear' : 'none';
+    if (planMode === 'column' && !hasColumn) planMode = 'none';
+    if (planMode === 'linear' && !hasPeriod) planMode = 'none';
+
+    const planned = {};
+    let unplanned = 0;
+    if (planMode === 'column') {
+      valid.forEach(t => { if (isIso(t.plannedDate)) planned[t.plannedDate] = (planned[t.plannedDate] || 0) + 1; else unplanned++; });
+    } else if (planMode === 'linear') {
+      const days = [];
+      for (let d = startDate; d <= endDate && days.length < 400; d = addDays(d, 1)) if (!isWeekend(d)) days.push(d);
+      if (!days.length) days.push(startDate);
+      days.forEach((d, i) => { planned[d] = Math.round(valid.length * (i + 1) / days.length) - Math.round(valid.length * i / days.length); });
+    }
+
+    const keys = [...Object.keys(realized), ...Object.keys(planned)];
+    if (hasPeriod) keys.push(startDate, endDate);
+    const base = { rows: [], hasPlan: planMode !== 'none', planMode, undated, unplanned, plannedToDate: 0, realizedToDate: 0, totalPlanned: 0, total: valid.length, rDate };
+    if (!keys.length) return base;
+    const first = keys.reduce((a, b) => (a < b ? a : b));
+    let last = keys.reduce((a, b) => (a > b ? a : b));
+    if (rDate > last && rDate <= addDays(last, 14)) last = rDate;
+
+    const rows = [];
+    let cp = 0, cr = 0;
+    for (let d = first; d <= last && rows.length < 370; d = addDays(d, 1)) {
+      const p = planned[d] || 0, r = realized[d] || 0;
+      if (cfg.skipWeekends !== false && isWeekend(d) && !p && !r) continue;
+      cp += p; cr += r;
+      const future = d > rDate;
+      rows.push({ date: d, planned: p, realized: future ? null : r, cumPlanned: cp, cumRealized: future ? null : cr, future });
+      if (!future) { base.plannedToDate = cp; base.realizedToDate = cr; }
+    }
+    base.rows = rows;
+    base.totalPlanned = cp;
+    return base;
+  }
+
+  function renderDaily(cfg) {
+    const title = `<h3 style="${FONT}font-size:14px;margin:18px 0 8px;color:#1d2330;">${esc(cfg.title || 'Execução diária')}</h3>`;
+    const s = dailySeries(cfg);
+    if (!s.rows.length) {
+      return title + `<p style="${FONT}font-size:13px;color:#8a93a3;">Sem datas para montar o gráfico. Preencha a Data de execução (e a Data planejada) no caderno, informe início e fim na aba Projeto, ou atualize o status na tabela do plano: a data de execução é registrada automaticamente.</p>`;
+    }
+    const cum = cfg.mode === 'cumulative';
+    const n = s.rows.length;
+    const W = 860, H = 260, ml = 40, mr = 12, mt = 16, mb = 44;
+    const pw = W - ml - mr, ph = H - mt - mb, band = pw / n;
+    const maxY = Math.max(1, ...s.rows.map(r => (cum ? Math.max(r.cumPlanned, r.cumRealized || 0) : Math.max(s.hasPlan ? r.planned : 0, r.realized || 0))));
+    const step = Math.max(1, Math.ceil(maxY / 4));
+    const top = step * Math.ceil(maxY / step);
+    const y = (v) => mt + ph - (v / top) * ph;
+    const xc = (i) => ml + band * i + band / 2;
+    const C_PLAN = '#a3b5e8', C_REAL = '#2f5bd3';
+    const parts = [];
+
+    for (let v = 0; v <= top; v += step) {
+      parts.push(`<line x1="${ml}" x2="${W - mr}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" stroke="#e2e8f0"/>`);
+      parts.push(`<text x="${ml - 6}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end" font-size="11" fill="#5d6676">${v}</text>`);
+    }
+    const every = Math.ceil(n / 16);
+    s.rows.forEach((r, i) => {
+      if (i % every === 0 || i === n - 1) parts.push(`<text x="${xc(i).toFixed(1)}" y="${H - mb + 16}" text-anchor="middle" font-size="10.5" fill="${r.future ? '#a0aec0' : '#5d6676'}">${shortDate(r.date)}</text>`);
+    });
+
+    if (!cum) {
+      const bw = Math.min(band * (s.hasPlan ? 0.38 : 0.6), 26);
+      s.rows.forEach((r, i) => {
+        const cx = xc(i);
+        if (s.hasPlan && r.planned) parts.push(`<rect x="${(s.hasPlan ? cx - bw : cx - bw / 2).toFixed(1)}" y="${y(r.planned).toFixed(1)}" width="${bw.toFixed(1)}" height="${(y(0) - y(r.planned)).toFixed(1)}" fill="${C_PLAN}" rx="2"><title>${shortDate(r.date)} — planejado: ${r.planned}</title></rect>`);
+        if (r.realized) {
+          const rx = s.hasPlan ? cx : cx - bw / 2;
+          const color = s.hasPlan && r.realized < r.planned ? '#d97706' : C_REAL;
+          parts.push(`<rect x="${rx.toFixed(1)}" y="${y(r.realized).toFixed(1)}" width="${bw.toFixed(1)}" height="${(y(0) - y(r.realized)).toFixed(1)}" fill="${color}" rx="2"><title>${shortDate(r.date)} — realizado: ${r.realized}${s.hasPlan ? ` de ${r.planned} planejados` : ''}</title></rect>`);
+          if (n <= 31) parts.push(`<text x="${(rx + bw / 2).toFixed(1)}" y="${(y(r.realized) - 4).toFixed(1)}" text-anchor="middle" font-size="10" font-weight="700" fill="#1d2330">${r.realized}</text>`);
+        }
+      });
+    } else {
+      if (s.hasPlan) {
+        const pts = s.rows.map((r, i) => `${xc(i).toFixed(1)},${y(r.cumPlanned).toFixed(1)}`).join(' ');
+        parts.push(`<polyline points="${pts}" fill="none" stroke="#8a93a3" stroke-width="2" stroke-dasharray="6 4"/>`);
+      }
+      const real = s.rows.map((r, i) => ({ r, i })).filter(o => o.r.cumRealized != null);
+      if (real.length) {
+        const pts = real.map(o => `${xc(o.i).toFixed(1)},${y(o.r.cumRealized).toFixed(1)}`).join(' ');
+        const area = `${xc(real[0].i).toFixed(1)},${y(0).toFixed(1)} ${pts} ${xc(real[real.length - 1].i).toFixed(1)},${y(0).toFixed(1)}`;
+        parts.push(`<polygon points="${area}" fill="${C_REAL}" fill-opacity="0.10"/>`);
+        parts.push(`<polyline points="${pts}" fill="none" stroke="${C_REAL}" stroke-width="2.5"/>`);
+        real.forEach(o => parts.push(`<circle cx="${xc(o.i).toFixed(1)}" cy="${y(o.r.cumRealized).toFixed(1)}" r="${n > 40 ? 2 : 3}" fill="${C_REAL}"><title>${shortDate(o.r.date)} — realizado acumulado: ${o.r.cumRealized}${s.hasPlan ? ` · planejado: ${o.r.cumPlanned}` : ''}</title></circle>`));
+        const lastR = real[real.length - 1];
+        parts.push(`<text x="${(xc(lastR.i) + 6).toFixed(1)}" y="${(y(lastR.r.cumRealized) - 6).toFixed(1)}" font-size="11" font-weight="700" fill="${C_REAL}">${lastR.r.cumRealized}</text>`);
+      }
+    }
+
+    const ri = s.rows.findIndex(r => r.date >= s.rDate);
+    if (ri >= 0 && s.rows.some(r => r.future)) {
+      const xr = s.rows[ri].date === s.rDate ? xc(ri) + band / 2 : ml + band * ri;
+      parts.push(`<line x1="${xr.toFixed(1)}" x2="${xr.toFixed(1)}" y1="${mt}" y2="${mt + ph}" stroke="#c53030" stroke-dasharray="3 3"/>`);
+      parts.push(`<text x="${(xr - 4).toFixed(1)}" y="${mt + 10}" text-anchor="end" font-size="10" fill="#c53030">${fmtDate(s.rDate)}</text>`);
+    }
+    parts.push(`<line x1="${ml}" x2="${W - mr}" y1="${y(0)}" y2="${y(0)}" stroke="#cbd5e0"/>`);
+
+    const svg = `<svg width="100%" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(cfg.title)}" style="max-width:${W}px;font-family:Segoe UI, Arial, sans-serif;">${parts.join('')}</svg>`;
+    const legend = cum
+      ? legendHtml([...(s.hasPlan ? [{ label: 'Planejado acumulado (tracejado)', color: '#8a93a3' }] : []), { label: 'Realizado acumulado', color: C_REAL }])
+      : legendHtml([...(s.hasPlan ? [{ label: 'Planejado no dia', color: C_PLAN }] : []), { label: 'Realizado no dia', color: C_REAL }, ...(s.hasPlan ? [{ label: 'Realizado abaixo do planejado', color: '#d97706' }] : [])]);
+
+    const dev = s.realizedToDate - s.plannedToDate;
+    const devColor = dev < 0 ? '#c53030' : '#1f8a4c';
+    const basis = s.planMode === 'column' ? 'planejado pela coluna Data planejada'
+      : s.planMode === 'linear' ? `planejado distribuído nos dias úteis de ${fmtDate(state.project.startDate)} a ${fmtDate(state.project.endDate)}`
+        : 'sem planejado (informe a Data planejada no caderno ou o período na aba Projeto)';
+    const notes = [basis];
+    if (s.undated) notes.push(`${s.undated} cenário(s) executado(s) sem data de execução não aparecem no gráfico`);
+    if (s.unplanned) notes.push(`${s.unplanned} cenário(s) sem data planejada`);
+    const summary = `<div style="${FONT}font-size:13px;color:#1d2330;margin-top:8px;">Até ${fmtDate(s.rDate)}: ${s.hasPlan ? `planejado <b>${s.plannedToDate}</b> · ` : ''}realizado <b>${s.realizedToDate}</b>${s.hasPlan ? ` (${fmtPct(pct(s.realizedToDate, s.plannedToDate))} do planejado) · desvio <b style="color:${devColor};">${dev > 0 ? '+' : ''}${dev}</b>` : ''} · total do plano: ${s.total}</div>
+      <div style="${FONT}font-size:11px;color:#8a93a3;margin-top:3px;">${notes.map(esc).join(' · ')}</div>`;
+
+    let table = '';
+    if (cfg.showTable) {
+      const tr = s.rows.filter(r => r.planned || r.realized).map(r => {
+        const dd = r.realized == null ? '' : r.realized - r.planned;
+        return `<tr><td style="${CELL}">${fmtDate(r.date)}</td>${s.hasPlan ? `<td style="${CELL}text-align:center;">${r.planned}</td>` : ''}<td style="${CELL}text-align:center;font-weight:600;">${r.realized == null ? '—' : r.realized}</td>${s.hasPlan ? `<td style="${CELL}text-align:center;color:${dd === '' ? '#a0aec0' : dd < 0 ? '#c53030' : '#1f8a4c'};">${dd === '' ? '—' : (dd > 0 ? '+' : '') + dd}</td><td style="${CELL}text-align:center;">${r.cumPlanned}</td>` : ''}<td style="${CELL}text-align:center;">${r.cumRealized == null ? '—' : r.cumRealized}</td></tr>`;
+      }).join('');
+      table = `<table style="width:100%;border-collapse:collapse;margin-top:10px;"><thead><tr><th style="${TH}">Data</th>${s.hasPlan ? `<th style="${TH}text-align:center;">Planejado</th>` : ''}<th style="${TH}text-align:center;">Realizado</th>${s.hasPlan ? `<th style="${TH}text-align:center;">Desvio</th><th style="${TH}text-align:center;">Acum. planejado</th>` : ''}<th style="${TH}text-align:center;">Acum. realizado</th></tr></thead><tbody>${tr}</tbody></table>`;
+    }
+    return title + svg + legend + summary + table;
+  }
+
   // ---------- Configuração do report ----------
   function renderReportConfig() {
     const r = state.report;
@@ -850,6 +1029,30 @@
     $('#cfgKpis').innerHTML = KPI_DEFS.map(k => `<label><input type="checkbox" data-kpi="${k.key}" ${r.kpis.includes(k.key) ? 'checked' : ''}> ${k.label}</label>`).join('');
     $('#cfgCharts').innerHTML = r.charts.map((c, i) => {
       const dims = dimensions(c.source);
+      const ctrl = `<div class="ctrl">
+          <button class="btn small ghost" data-act="up" ${i === 0 ? 'disabled' : ''} title="Subir">↑</button>
+          <button class="btn small ghost" data-act="down" ${i === r.charts.length - 1 ? 'disabled' : ''} title="Descer">↓</button>
+          <button class="btn small ghost" data-act="dup" title="Duplicar">Duplicar</button>
+          <button class="btn small danger" data-act="del" title="Remover">Remover</button>
+        </div>`;
+      if (c.type === 'daily') {
+        const hasPlanned = state.tests.some(t => t.plannedDate);
+        return `<div class="chart-cfg" data-id="${esc(c.id)}">
+          <label class="full">Título<input data-k="title" value="${esc(c.title)}"></label>
+          <label class="full">Tipo<select data-k="type">${CHART_TYPES.map(t => `<option value="${t.key}" ${t.key === c.type ? 'selected' : ''}>${t.label}</option>`).join('')}</select></label>
+          <label>Visão<select data-k="mode"><option value="daily" ${c.mode !== 'cumulative' ? 'selected' : ''}>Por dia</option><option value="cumulative" ${c.mode === 'cumulative' ? 'selected' : ''}>Acumulado (curva S)</option></select></label>
+          <label>Planejado<select data-k="plan">
+            <option value="auto" ${(c.plan || 'auto') === 'auto' ? 'selected' : ''}>Automático</option>
+            <option value="column" ${c.plan === 'column' ? 'selected' : ''}>Data planejada</option>
+            <option value="linear" ${c.plan === 'linear' ? 'selected' : ''}>Distribuir no período</option>
+            <option value="none" ${c.plan === 'none' ? 'selected' : ''}>Não mostrar</option>
+          </select></label>
+          <label class="inline full"><input type="checkbox" data-k="skipWeekends" ${c.skipWeekends !== false ? 'checked' : ''}> Ignorar fins de semana sem execução</label>
+          <label class="inline full"><input type="checkbox" data-k="showTable" ${c.showTable ? 'checked' : ''}> Incluir tabela dia a dia</label>
+          <p class="hint full" style="margin:0;font-size:.75rem;">${hasPlanned ? 'O plano tem Data planejada: o planejado vem dela.' : 'Sem Data planejada no plano: o automático distribui os cenários pelos dias úteis entre início e fim do projeto.'}</p>
+          ${ctrl}
+        </div>`;
+      }
       return `<div class="chart-cfg" data-id="${esc(c.id)}">
         <label class="full">Título<input data-k="title" value="${esc(c.title)}"></label>
         <label>Tipo<select data-k="type">${CHART_TYPES.map(t => `<option value="${t.key}" ${t.key === c.type ? 'selected' : ''}>${t.label}</option>`).join('')}</select></label>
@@ -1050,13 +1253,13 @@
     const d = (offset) => { const x = new Date(t); x.setDate(x.getDate() + offset); return x.toISOString().slice(0, 10); };
     const mods = ['Cotação', 'Emissão', 'Pagamento', 'Portal do Corretor'];
     const st = ['passed', 'passed', 'passed', 'failed', 'blocked', 'pending', 'passed', 'inprogress', 'passed', 'pending'];
-    const tests = Array.from({ length: 32 }, (_, i) => ({
+    const tests = Array.from({ length: 32 }, (_, i) => { const off = -4 + Math.floor(i / 4); const stt = off <= 0 ? st[i % st.length] : 'pending'; return {
       uid: uid(), id: `CT-${String(i + 1).padStart(3, '0')}`,
       title: ['Validar cálculo de prêmio', 'Gerar proposta em PDF', 'Pagamento via boleto', 'Login do corretor', 'Endosso de inclusão', 'Validação de CEP', 'Cancelamento de apólice', 'Reenvio de e-mail'][i % 8] + ` — cenário ${i + 1}`,
       module: mods[i % mods.length], owner: ['Ana', 'Bruno', 'Carla'][i % 3], priority: ['Alta', 'Média', 'Baixa'][i % 3],
-      status: st[i % st.length], executedAt: st[i % st.length] === 'passed' || st[i % st.length] === 'failed' ? d(-(i % 4)) : '', bugRef: '',
+      status: stt, plannedDate: d(off), executedAt: stt === 'passed' || stt === 'failed' ? d(Math.min(off + (i % 5 === 0 ? 1 : 0), 0)) : '', bugRef: '',
       extra: { Ciclo: i < 20 ? 'Ciclo 1' : 'Ciclo 2' },
-    }));
+    }; });
     const s = emptyState();
     return Object.assign(s, {
       project: { name: 'Portal de Cotação (exemplo)', release: 'R2.4', environment: 'HML', owner: 'Equipe QA', startDate: d(-4), endDate: d(5), scope: 'Homologação do novo fluxo de cotação e emissão para corretores.', statusOverride: '', audience: 'PO, Dev, Negócio' },
@@ -1193,6 +1396,11 @@
       save(); renderPlan();
     });
     $('#testTable').addEventListener('change', (e) => {
+      if (e.target.classList.contains('test-exec')) {
+        const t = state.tests.find(x => x.uid === e.target.closest('tr').dataset.uid);
+        if (t) { t.executedAt = e.target.value; save(); }
+        return;
+      }
       if (!e.target.classList.contains('test-status')) return;
       const t = state.tests.find(x => x.uid === e.target.closest('tr').dataset.uid);
       if (t) {
@@ -1295,12 +1503,14 @@
     });
     $('#cfgCharts').addEventListener('change', (e) => {
       const k = e.target.dataset.k; const c = chartOf(e.target); if (!k || !c || k === 'title') return;
-      if (k === 'percent') c.percent = e.target.checked;
+      if (k === 'percent' || k === 'skipWeekends' || k === 'showTable') c[k] = e.target.checked;
       else if (k === 'limit') c.limit = Math.max(0, parseInt(e.target.value, 10) || 0);
       else c[k] = e.target.value;
       if (k === 'source') { c.groupBy = dimensions(c.source)[0].key; c.splitBy = ''; }
       if (k === 'groupBy' && c.splitBy === c.groupBy) c.splitBy = '';
       if (k === 'type' && c.type === 'donut') c.splitBy = '';
+      if (k === 'type' && c.type === 'daily') { c.source = 'tests'; c.mode = c.mode || 'daily'; c.plan = c.plan || 'auto'; if (c.skipWeekends == null) c.skipWeekends = true; }
+      if (k === 'type' && c.type !== 'daily' && !findDim(c.source, c.groupBy)) c.groupBy = dimensions(c.source)[0].key;
       refresh(true);
     });
     $('#cfgCharts').addEventListener('click', (e) => {

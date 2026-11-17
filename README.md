@@ -16,14 +16,14 @@ Gerador de status report simples para homologações.
 ### Importar o próprio caderno de testes
 Ao subir uma planilha em formato próprio, abre a **Configuração da importação**:
 - **Aba** e **linha do cabeçalho**: detectadas automaticamente (funciona com capa/título acima da tabela).
-- **Campos do report**: qual coluna corresponde a ID, Cenário, Módulo, Responsável, Prioridade, Data de execução, Bug relacionado e Status.
+- **Campos do report**: qual coluna corresponde a ID, Cenário, Módulo, Responsável, Prioridade, Data planejada, Data de execução, Bug relacionado e Status.
 - **Campos extras**: outras colunas (Ciclo, Sistema, Tipo de teste…) que passam a aparecer na tabela, na busca e nos gráficos.
 - **Valores de status**: cada valor encontrado (ex.: `OK`, `NOK`, `Aguardando massa`) é ligado a um status do report.
 - **Salvar como modelo**: na próxima vez que uma planilha com as mesmas colunas for importada, a configuração é aplicada sozinha. Modelos podem ser exportados/importados em `.json` para compartilhar com o time.
 
 ### Gráficos configuráveis
 No painel **Configurar report** dá para ligar/desligar seções e indicadores e montar os gráficos:
-- **Tipo:** barras horizontais, colunas, rosca ou tabela.
+- **Tipo:** barras horizontais, colunas, rosca, tabela ou **execução diária (planejado x realizado)**.
 - **Dados:** cenários de teste ou bugs.
 - **Agrupar por / dividir por:** status, módulo, responsável, prioridade, data, severidade, aberto/fechado ou qualquer campo extra importado.
 - Opções de 100%, limite de itens (agrupa o resto em "Outros"), reordenar, duplicar e restaurar o padrão.
@@ -48,3 +48,11 @@ O workflow `.github/workflows/pages.yml` publica o site no GitHub Pages a cada p
 Na primeira vez, em **Settings → Pages**, escolha **Source: GitHub Actions**.
 
 Leitura de Excel via [SheetJS](https://sheetjs.com/) (Apache-2.0), incluído em `vendor/`.
+
+### Execução diária — planejado x realizado
+Usa a **Data de execução** dos cenários executados (Passou/Falhou). Ao mudar o status na tabela do plano, a data do dia é registrada automaticamente e pode ser ajustada.
+O planejado vem da coluna **Data planejada** (se o caderno tiver) ou, sem ela, é distribuído pelos dias úteis entre início e fim informados na aba Projeto.
+- **Por dia:** colunas de planejado e realizado lado a lado (laranja quando o realizado ficou abaixo do planejado).
+- **Acumulado (curva S):** linha do planejado acumulado x realizado acumulado.
+- Linha da data do report, resumo do desvio e tabela dia a dia opcional.
+Quando há planejado, o farol de status geral também compara o realizado com o planejado até a data do report.
